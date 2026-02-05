@@ -1,69 +1,80 @@
 import math
 import heapq
 
-def rolling_a_star(prm, start, goal, R=15, k=5, w_f=0.7, w_g=1.0):
+def rolling_a_star(prm, start, goal, R=15, k=10, w_f=0.7, w_g=1.0, w_v=50.0):
     """
-    改进滚动 A*:
-    prm: PRM 对象
-    start, goal: (x,y)
-    R: 探测半径
-    k: 子目标候选节点数量（距离 goal 最近）
-    w_f: f(x) 权重
-    w_g: g(x) 权重
+    带记忆的 Rolling A*
+    w_v: 已访问节点惩罚权重
     """
     path_total = [start]
     current = start
 
+    local_graph = {}            # 🧠 记忆局部地图
+    visited = set([start])      # 🚫 防止震荡
+
     while True:
         # 1️⃣ 找半径 R 内的节点
-        local_nodes = [n for n in prm.nodes if math.hypot(n[0]-current[0], n[1]-current[1]) <= R]
+        # local_nodes = [
+        #     n for n in prm.nodes
+        #     if math.hypot(n[0]-current[0], n[1]-current[1]) <= R
+        # ]
+        local_nodes, _, g_cost = dijkstra_ball(prm, current, R)
+        local_nodes = list(local_nodes)
 
         if not local_nodes:
             print("No nodes in local radius!")
             break
 
-        # 确保 goal 包含在局部图候选中
-        if goal not in local_nodes:
-            local_nodes.append(goal)
+        # 2️⃣ 更新「记忆局部图」
+        for n in local_nodes:
+            if n not in local_graph:
+                local_graph[n] = []
 
-        # 2️⃣ 选出 k 个离 goal 最近的节点作为候选
+            for nb in prm.graph.get(n, []):
+                if nb in local_nodes and nb not in local_graph[n]:
+                    local_graph[n].append(nb)
+
+        # 3️⃣ 选 k 个离 goal 最近的候选
         local_nodes.sort(key=lambda n: math.hypot(n[0]-goal[0], n[1]-goal[1]))
         candidates = local_nodes[:k]
 
-        # 3️⃣ 构建局部图
-        local_graph = {}
-        for n in local_nodes:
-            neighbors = [nb for nb in prm.graph.get(n, []) if nb in local_nodes]
-            local_graph[n] = neighbors
-
-        # 4️⃣ 计算 f+g 选择 subgoal
+        # 4️⃣ 计算带记忆的 f + g + visited penalty
         f_g_values = {}
         for node in candidates:
             f_val = dijkstra_cost(local_graph, current, node)
             g_val = math.hypot(node[0]-goal[0], node[1]-goal[1])
-            f_g_values[node] = w_f * f_val + w_g * g_val
+            v_penalty = w_v if node in visited else 0.0
 
-        subgoal = min(f_g_values, key=f_g_values.get)
+            f_g_values[node] = w_f * f_val + w_g * g_val + v_penalty
 
-        # 5️⃣ 局部 A* 搜索到 subgoal
-        came_from, found = astar_local(current, subgoal, local_graph)
-        if not found:
+        sorted_subgoals = sorted(f_g_values, key=f_g_values.get)
+
+        # 5️⃣ 在「记忆图」上局部 A*
+        path = []
+        for subgoal in sorted_subgoals:
+            came_from, found = astar_local(current, subgoal, local_graph)
+            if not found:
+                continue
+
+            path = reconstruct_path(came_from, subgoal)
+            if len(path) >= 2:
+                break
+
+        if len(path) < 2:
             print("Local A* failed!")
             break
 
-        path = reconstruct_path(came_from, subgoal)
-        if len(path) < 2:
-            break
-
-        # 6️⃣ 移动一步到路径下一点
+        # 6️⃣ 向前滚动一步
         current = path[1]
         path_total.append(current)
+        visited.add(current)
 
-        # 7️⃣ 检查是否到达 goal
+        # 7️⃣ 是否到达 goal
         if math.hypot(current[0]-goal[0], current[1]-goal[1]) < 1e-3:
             break
 
     return path_total
+
 
 
 # ----------------- 工具函数 -----------------
@@ -126,3 +137,37 @@ def dijkstra_cost(graph, start, goal):
                 costs[nb] = new_cost
                 heapq.heappush(heap, (new_cost, nb))
     return float('inf')
+
+def dijkstra_ball(prm, start, R):
+    """
+    返回：
+    local_nodes: 所有 d(start, x) ≤ R 的节点
+    local_graph: induced subgraph
+    g_cost: start 到各点的最短路径代价
+    """
+    pq = [(0.0, start)]
+    g_cost = {start: 0.0}
+    visited = set()
+
+    while pq:
+        cost, u = heapq.heappop(pq)
+        if cost > R:
+            continue
+        if u in visited:
+            continue
+        visited.add(u)
+
+        for v in prm.graph[u]:
+            new_cost = cost + prm.dist(u, v)
+            if new_cost < g_cost.get(v, float("inf")):
+                g_cost[v] = new_cost
+                heapq.heappush(pq, (new_cost, v))
+
+    local_nodes = set(g_cost.keys())
+
+    local_graph = {
+        u: [v for v in prm.graph[u] if v in local_nodes]
+        for u in local_nodes
+    }
+
+    return local_nodes, local_graph, g_cost

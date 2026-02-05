@@ -114,7 +114,6 @@ def plot_rolling(map_array, prm, path, start, goal):
     plt.legend()
     plt.gca().invert_yaxis()
     plt.title("Rolling A* Path on PRM")
-    plt.show()
 
 if __name__ == "__main__":
     png_map = "Examples_4_Modules/example_map_2D/map.png"
@@ -132,11 +131,13 @@ if __name__ == "__main__":
     # 2️⃣ 构建 PRM 并寻找路径
     prm = PRM(start=start, goal=goal, num_nodes=300, map_array=map_array, max_sample_dist=R)
     path = prm.find_path()
+    lts_individual = prm.to_networkx()
     print("Path length:", len(path))
     if path:
         print("Path:", path[:5], "...", path[-5:])
     else:
         print("No path found!")
+        exit()
 
     # 3️⃣ 绘图
     plot_prm(map_array, prm, path)
@@ -147,3 +148,6 @@ if __name__ == "__main__":
 
     # 5️⃣ 可视化
     plot_rolling(map_array, prm, path_total, start, goal)
+
+    plt.show()
+    print("finished!")

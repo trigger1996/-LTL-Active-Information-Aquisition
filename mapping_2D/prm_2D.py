@@ -1,6 +1,7 @@
 import random
 import math
 import numpy as np
+import networkx as nx
 from scipy.spatial import KDTree
 
 import random
@@ -156,6 +157,43 @@ class PRM:
                     open_set.add(nb)
 
         return []
+
+    def to_networkx(self):
+        """
+        返回 networkx.Graph
+        节点: q0, q1, q2, ...
+        节点属性: pos=(x,y), is_start, is_goal
+        """
+        G = nx.Graph()
+
+        # 1️⃣ 建立编号映射
+        node_id_map = {}
+        node_list = list(self.nodes)
+
+        # 强制 start 是 q0
+        node_list.remove(self.start)
+        node_list = [self.start] + node_list
+
+        for i, p in enumerate(node_list):
+            qid = f"q{i}"
+            node_id_map[p] = qid
+            G.add_node(
+                qid,
+                pos=p,  # 坐标作为属性
+                #is_start=(p == self.start),
+                #is_goal=(p == self.goal)
+            )
+
+        # 2️⃣ 加边
+        for p, neighbors in self.graph.items():
+            for q in neighbors:
+                G.add_edge(
+                    node_id_map[p],
+                    node_id_map[q],
+                    weight=self.dist(p, q)
+                )
+
+        return G, node_id_map
 
     @staticmethod
     def _reconstruct(came_from, cur):
